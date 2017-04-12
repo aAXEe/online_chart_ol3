@@ -11,6 +11,12 @@ import ol from 'openlayers'
 import ChartLayer from '../chartlayer'
 import orderIds from '../layerOrderNumbers'
 
+import SimpleImageSvgStyle from 'ol-style-simpleImageSvgStyle'
+import VesselSvg from './marinetraffic-symbol-vessel.svg'
+import VesselMarkedSvg from './marinetraffic-symbol-vessel-marked.svg'
+import VesselAnchorSvg from './marinetraffic-symbol-vesselAnchor.svg'
+import VesselAnchorMarkedSvg from './marinetraffic-symbol-vesselAnchor-marked.svg'
+
 import { featureClicked, layerTileLoadStateChange } from '../../store/actions'
 import { setSidebarOpen, setSidebarActiveTab } from '../../controls/sidebar/store'
 import warning from 'fbjs/lib/warning'
@@ -30,54 +36,85 @@ const FEATURE_HOVERED_PROPERTY_NAME = '_hovered'
 
 module.exports = function (context, options) {
   var defaults = {
-    nameKey: 'layer-name-marinetraffic'
+    nameKey: 'layer-name-marinetraffic',
+    iconSize: 32
   }
   Object.assign(defaults, options)
 
+    // xyz grid for tile access
+  const tileGrid = ol.tilegrid.createXYZ({maxZoom: 9, tileSize: [512, 512]})
+  const labelGrid = ol.tilegrid.createXYZ()
+
+  const vesselImage = new SimpleImageSvgStyle(VesselSvg, defaults.iconSize, defaults.iconSize)
+  const vesselImageMarked = new SimpleImageSvgStyle(VesselMarkedSvg, defaults.iconSize, defaults.iconSize)
+  const vesselAnchorImage = new SimpleImageSvgStyle(VesselAnchorSvg, defaults.iconSize / 2, defaults.iconSize / 2)
+  const vesselAnchorImageMarked = new SimpleImageSvgStyle(VesselAnchorMarkedSvg, defaults.iconSize / 2, defaults.iconSize / 2)
   var styleFunction = function (feature, resolution) {
-    let clicked = feature.get(FEATURE_CLICKED_PROPERTY_NAME)
-    let hovered = feature.get(FEATURE_HOVERED_PROPERTY_NAME)
-    let name = feature.get('SHIPNAME') || feature.get('MMSI')
-    let nameElement = new ol.style.Text({
-      font: hovered ? 'bold 12px sans-serif' : '10px sans-serif',
-      offsetY: 12,
-      text: name,
-      textAlign: 'center',
-      textBaseline: 'top'
+    const z = labelGrid.getZForResolution(resolution)
+    const clicked = feature.get(FEATURE_CLICKED_PROPERTY_NAME)
+    const hovered = feature.get(FEATURE_HOVERED_PROPERTY_NAME)
+    const speed = Number(feature.get('SPEED')) / 10
+    const rotation = Number(feature.get('COURSE')) * Math.PI / 180
+    const length = Number(feature.get('LENGTH'))
+
+    let localImage = speed > 1 ? (clicked ? vesselImageMarked : vesselImage) : (clicked ? vesselAnchorImageMarked : vesselAnchorImage)
+    let scale = localImage.getScale('originalScale')
+    if (z < 10) scale *= z / 10
+
+    localImage = localImage.clone()
+    localImage.setScale(scale)
+    localImage.setRotation(rotation)
+
+    const style = new ol.style.Style({
+      image: localImage
     })
 
-    let image = new ol.style.Circle({
-      radius: 10,
-      fill: new ol.style.Fill({
-        color: 'rgba(16, 40, 68, 0.3)'
-      }),
-      stroke: new ol.style.Stroke({
-        color: 'rgba(16, 40, 68, 1)',
-        width: hovered || clicked ? 3 : 1
+    let showLabel = hovered || clicked
+
+    if (z >= 12) showLabel = true
+    if (z >= 10 && length >= 50) showLabel = true
+    if (z >= 8 && length >= 100)showLabel = true
+    if (z >= 7 && length >= 200) showLabel = true
+
+    if (showLabel) {
+      const name = feature.get('SHIPNAME') || feature.get('MMSI')
+      const nameElement = new ol.style.Text({
+        font: hovered ? 'bold 12px sans-serif' : '10px sans-serif',
+        offsetY: defaults.iconSize * scale / 2,
+        text: name,
+        textAlign: 'center',
+        textBaseline: 'top'
       })
-    })
+      style.setText(nameElement)
+    }
+    return style
+  }
 
-    return new ol.style.Style({
-      image: image,
-      text: nameElement
+  var ATTRIBUTION = 'Ship data by <a href="https://marinetraffic.com/">MarineTraffic</a>'
+
+    // return the url to get the tile at [z, x, -y]
+  function tileUrlFunction (tileCoord) {
+    return ('http://www.marinetraffic.com/getData/get_data_json_3/z:{z}/X:{x}/Y:{y}/station:0')
+                .replace('{z}', String(tileCoord[0] + 1))
+                .replace('{x}', String(tileCoord[1]))
+                .replace('{y}', String(-tileCoord[2]) - 1)
+  }
+
+    // return the url to be fetched to get the data inside the resoultion area
+  function mapExtentToTile (extent, resoltuion) {
+    let coords = []
+    tileGrid.forEachTileCoord(extent, tileGrid.getZForResolution(resoltuion), (coord) => {
+      coords.push(coord)
     })
+    const coord = coords[0]
+    return tileUrlFunction(coord)
   }
 
   let source = new ol.source.Vector({
+    attributions: [new ol.Attribution({html: ATTRIBUTION})],
     loader: function (extent, resolution, projection) {
-      var epsg4326Extent = ol.proj.transformExtent(extent, projection, 'EPSG:4326')
-
-      let apikey = '7b58e3ad9855067acc7404a3199268d929af9287'
-      let minlat = epsg4326Extent[1]
-      let minlon = epsg4326Extent[0]
-      let maxlat = epsg4326Extent[3]
-      let maxlon = epsg4326Extent[2]
-      var url = 'http://services.marinetraffic.com/api/exportvessels/' +
-        `${apikey}/` +
-        `MINLAT:${minlat}/MAXLAT:${maxlat}/MINLON:${minlon}/MAXLON:${maxlon}/` +
-        'protocol:jsono'
-
-      let corsUrl = '//whateverorigin.org/get?url=' + encodeURIComponent(url) + '&callback=?'
+      var url = mapExtentToTile(extent, resolution)
+      let corsUrl = 'https://whateverorigin.herokuapp.com/get?url=' + encodeURIComponent(url) + '&callback=?'
 
       $.ajax({
         url: corsUrl,
@@ -85,6 +122,12 @@ module.exports = function (context, options) {
         success: function (data) {
           let features = []
           let results
+
+          if (!data.contents) {
+            // empty response received: no ships in this area
+            this.dispatchEvent({type: 'tileloadend', target: this})
+            return
+          }
 
           try {
             results = JSON.parse(data.contents)
@@ -98,19 +141,20 @@ module.exports = function (context, options) {
             })
             return
           }
-          results.forEach((res) => {
+          this.dispatchEvent({type: 'tileloadend', target: this})
+          const resultList = results.data.rows
+          resultList.forEach((res) => {
             let featureProps = res
             let labelCoords = ol.proj.fromLonLat([Number(res.LON), Number(res.LAT)])
             featureProps.geometry = new ol.geom.Point(labelCoords)
 
             let feature = new ol.Feature(featureProps)
                     // feature.setStyle(styleFunction)
-            feature.setId(res.MMSI)
+            feature.setId(res.SHIP_ID)
             features.push(feature)
           })
 
           this.addFeatures(features)
-          this.dispatchEvent({type: 'tileloadend', target: this})
         },
         error: function (jqXHR, textStatus, errorThrown) {
           this.dispatchEvent({
@@ -125,7 +169,7 @@ module.exports = function (context, options) {
 
       this.dispatchEvent({type: 'tileloadstart', target: this})
     },
-    strategy: ol.loadingstrategy.bbox
+    strategy: ol.loadingstrategy.tile(tileGrid)
   })
   source.on(['tileloadstart', 'tileloadend', 'tileloaderror'], function (ev) {
     context.dispatch(layerTileLoadStateChange(options.id, ev))
@@ -134,7 +178,9 @@ module.exports = function (context, options) {
   let layer = new ol.layer.Vector({
     source: source,
     style: styleFunction,
-    zIndex: orderIds.user_overlay
+    zIndex: orderIds.user_overlay,
+    updateWhileAnimating: false,
+    updateWhileInteracting: true
   })
 
   layer.on('selectFeature', function (e) {

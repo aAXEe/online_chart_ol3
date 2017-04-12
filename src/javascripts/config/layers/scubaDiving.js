@@ -40,10 +40,14 @@ module.exports = function (context, options) {
 
   var styles = {
     'sport': {
-      'scuba_diving': new SimpleImageSvgStyle(ScubaDivingSvg, defaults.iconSize, defaults.iconSize)
+      'scuba_diving': new ol.style.Style({
+        image: new SimpleImageSvgStyle(ScubaDivingSvg, defaults.iconSize, defaults.iconSize)
+      })
     },
     'amenity': {
-      'dive_centre': new SimpleImageSvgStyle(DiveCentreSvg, defaults.iconSize, defaults.iconSize)
+      'dive_centre': new ol.style.Style({
+        image: new SimpleImageSvgStyle(DiveCentreSvg, defaults.iconSize, defaults.iconSize)
+      })
     }
   }
   let tagBasedStyle = (feature) => {
