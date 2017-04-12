@@ -12,13 +12,13 @@ import DeMvDepth from './layers/germany_mv_depth'
 import ScubaDiving from './layers/scubaDiving'
 import SeamarksDebug from './layers/seamarkDebug'
 import Search from './layers/search'
-import Marinetraffic from './layers/marinetraffic'
 import GridWgs from './layers/grid_wgs'
 import Download from './layers/downloadBundles'
 import MarineProfile from './layers/marineProfile'
 import ElevationProfile from './layers/elevationProfile'
 import BingBase from './layers/bingBase'
 import DebugTiles from './layers/tilesDebug'
+import MarinetrafficImages from './layers/marinetraffic-imageLayer'
 
 /**
 for the old (2013) layers format see:
@@ -122,12 +122,6 @@ export const availibleOverlayLayers = [
     visibleDefault: true
   },
   {
-    LayerConstructor: Marinetraffic,
-    id: 'overlay_marinetraffic',
-    urlIndex2016: 5,
-    visibleDefault: false
-  },
-  {
     LayerConstructor: Download,
     id: 'overlay_download',
     urlIndex2013: 8,
@@ -138,6 +132,12 @@ export const availibleOverlayLayers = [
     LayerConstructor: DebugTiles,
     id: 'overlay_debug',
     urlIndex2016: 10,
+    visibleDefault: false
+  },
+  {
+    LayerConstructor: MarinetrafficImages,
+    id: 'overlay_marinetraffic-imageLayer',
+    urlIndex2016: 11,
     visibleDefault: false
   }
 ]
